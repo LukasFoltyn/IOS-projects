@@ -1,0 +1,215 @@
+#!/bin/sh
+export POSIXLY_CORRECT=yes
+
+#--------------------------------------------------------------------------#
+
+#                                                                          # 
+#   dirgraph [-i FILE_ERE] [-n] [DIR]                                      #
+#                                                                          #
+#   Print how many files and subdirectories are in user asked directory    #
+#   and also sort all the files depending on their size.If directory is    #
+#   not given, current directory is searched.                              #
+#                                                                          #
+#   IOS - 1.projekt                                                        #
+#   Lukas Foltyn, Fakulta informacnich technologii VUT                     #
+#   29.3.2020                                                              # 
+#                                                                          #
+
+#--------------------------------------------------------------------------#
+
+
+size_less_than100B=0
+size_less_than1KiB=0
+size_less_than10KiB=0
+size_less_than100KiB=0
+size_less_than1MiB=0
+size_less_than10MiB=0
+size_less_than100MiB=0
+size_less_than1GiB=0
+size_remaining=0
+dir_count=0
+file_count=0
+
+determine_file_size()
+{
+    local size=$(ls -l "$1" | cut -d " " -f5)
+    if [ "$size" -lt 100 ]; then
+        size_less_than100B=$((size_less_than100B+1))
+    elif [ "$size" -lt 1024 ]; then 
+        size_less_than1KiB=$((size_less_than1KiB+1))
+    elif [ "$size" -lt 10240 ]; then 
+        size_less_than10KiB=$((size_less_than10KiB+1))
+    elif [ "$size" -lt 102400 ]; then 
+        size_less_than100KiB=$((size_less_than100KiB+1))
+    elif [ "$size" -lt 1048756 ]; then 
+        size_less_than1MiB=$((size_less_than1MiB+1))
+    elif [ "$size" -lt 10487560 ]; then 
+        size_less_than10MiB=$((size_less_than10MiB+1))
+    elif [ "$size" -lt 104875600 ]; then 
+        size_less_than100MiB=$((size_less_than100MiB+1))
+    elif [ "$size" -lt 1073741824 ]; then 
+        size_less_than1GiB=$((size_less_than1GiB+1))   
+    else
+        size_remaining=$((size_remaining+1))   
+    fi
+}
+
+explore_dir()
+{
+    local starting_dir="$1"
+    local ignore="$2"
+    local strlen="$(echo "$starting_dir" | wc -m)-"
+  #  local base=""
+    temp="$IFS"
+    IFS='
+'
+    for file_or_dir in $(find "$starting_dir" 2>/dev/null); do
+        if [ -z "$ignore" ] || [ -z "$( echo "$(echo "$file_or_dir" | cut -b "$strlen")" | grep -- "$ignore")" ]; then 
+                
+                if [ -d "$file_or_dir" ]; then 
+                   
+                    base=""
+                    dir_count=$((dir_count+1))
+            
+                elif [ -f "$file_or_dir" -a ! -h "$file_or_dir" ]; then
+               
+                    base=""
+                    file_count=$((file_count+1))
+                    determine_file_size "$file_or_dir"
+                fi
+        fi
+    done
+    IFS="$temp"
+}
+
+
+
+#--------- help strings for print_file_size and normalize function
+
+string_print='echo $size_less_than100B-echo $size_less_than1KiB-echo $size_less_than10KiB-echo $size_less_than100KiB-echo $size_less_than1MiB-echo $size_less_than10MiB-echo $size_less_than100MiB-echo $size_less_than1GiB-echo $size_remaining'
+
+file_size_print='  <100 B  : -  <1 KiB  : -  <10 KiB : -  <100 Kib: -  <1 MiB  : -  <10 MiB : -  <100 MiB: -  <1 GiB  : -  >=1 GiB : '
+
+
+print_file_sizes()    
+{   
+    local loop_for_file=1     
+    local string_vars="$1"
+    local prefix_size="$2"
+    temp=$IFS
+    IFS="?"
+    until [ $loop_for_file -eq 10 ]
+    do
+        local part_of_string="-f$loop_for_file"
+        echo -n $(echo "$file_size_print" | cut -d "-" $part_of_string)
+        loop_count=$(eval "$(echo "$string_vars" | cut -d "-" $part_of_string)")
+        while [ $loop_count -gt 0 ]
+        do
+            echo -n '#'
+            loop_count=$((loop_count-1))
+        done
+        echo
+        loop_for_file=$((loop_for_file+1))
+    done
+    IFS="$temp"
+}
+
+normalize()
+{
+    local string_files="$1"
+    local max_size=0
+    local loop=1
+    until [ $loop -eq 10 ]; do
+        local part_of_string="-f$loop"
+        file_num=$(eval "$(echo "$string_files" | cut -d "-" $part_of_string)")
+        
+        if [ $file_num -gt $max_size ]; then
+            max_size=$file_num
+        fi
+        loop=$((loop+1))
+    done
+    if [ -t 1 ]; then
+        term_width=$(($(tput cols)-13))
+    else
+        term_width=67
+    fi
+    if [ $max_size -gt $term_width ]; then
+        local divide=$(echo "$max_size / $term_width" | bc -l)
+        size_less_than100B=$(echo "$size_less_than100B / $divide" | bc)
+        size_less_than1KiB=$(echo "$size_less_than1KiB / $divide" | bc)
+        size_less_than10KiB=$(echo "$size_less_than10KiB / $divide" | bc)
+        size_less_than100KiB=$(echo "$size_less_than100KiB / $divide" | bc)
+        size_less_than1MiB=$(echo "$size_less_than1MiB / $divide" | bc)
+        size_less_than10MiB=$(echo "$size_less_than10MiB / $divide" | bc)
+        size_less_than100MiB=$(echo "$size_less_than100MiB / $divide" |bc)
+        size_less_than1GiB=$(echo "$size_less_than1GiB / $divide" | bc)
+        size_remaining=$(echo "$size_remaining / $divide" | bc)
+    fi
+}
+
+#----------- command line - positional parameters
+normalization="false"
+error="dirgraph: [-i FILE_ERE] [-n] [DIR]"
+
+if [ $# -gt 4 ]; then
+    echo "$error" >&2
+    exit 1
+
+else
+    while getopts ":i:n" option; do
+        case $option in
+            i ) ignored_files=$OPTARG;;
+            n ) normalization="true" ;;
+            ? ) echo "$error" >&2
+                exit 1 ;;
+        esac
+    done
+    shift $(($OPTIND - 1))
+    if [ -n "$1" ]; then
+        searched_dir="$1"
+        shift
+        if [ ! -z "$1" ]; then
+            echo "$error" >&2
+            exit 1
+        fi    
+    else
+        searched_dir=$PWD
+    fi
+        
+fi
+
+if [ "$searched_dir" = '.' ]; then
+   searched_dir="$PWD"
+fi
+if [ "$ignored_files" = '.' ]; then
+    ignored_files="$PWD"
+fi
+
+#-------------------- error handling - searched dir/ignored files
+
+if [ ! -d "$searched_dir" ]; then
+    echo "dirgraph: $searched_dir directory not found." >&2
+    exit 1
+
+elif [ -d "$searched_dir" -a ! -x "$searched_dir" ]; then
+    echo "dirgraph: $searched_dir directory - Permission denied." >&2
+    exit 1
+elif [ ! -z "$ignored_files" ] && [ -n "$(echo "/$(echo "$searched_dir" | awk -F/ '{if ( $NF == "") print $(NF-1); else print $NF}')" | 
+    grep -- "$ignored_files")" ]; then 
+   
+   echo "dirgraph: you can not ignore the searched path." >&2  
+   exit 1
+fi
+
+#--------- calling functions
+
+explore_dir "$searched_dir" "$ignored_files"
+if [ "$normalization" = "true" ]; then
+    normalize "$string_print"
+fi
+echo "Root directory: "$searched_dir"\nDirectories: $dir_count \nAll files: $file_count \nFile size histogram:"
+print_file_sizes "$string_print" "$file_size_print"
+
+#------- end of script
+
+
